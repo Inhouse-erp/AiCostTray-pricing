@@ -1,0 +1,30 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 形式と値の範囲
+        run: python scripts/validate.py pricing.json
+      - name: 前の版との比較 (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          git show "origin/${{ github.base_ref }}:pricing.json" > base.json 2>/dev/null || exit 0
+          python scripts/validate.py pricing.json base.json
+      - name: 前の版との比較 (push)
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: |
+          git show "${{ github.event.before }}:pricing.json" > base.json 2>/dev/null || exit 0
+          if cmp -s pricing.json base.json; then exit 0; fi
+          python scripts/validate.py pricing.json base.json
