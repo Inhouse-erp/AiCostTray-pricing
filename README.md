@@ -16,7 +16,7 @@ https://raw.githubusercontent.com/Inhouse-erp/AiCostTray-pricing/main/pricing.js
 
 ## LiteLLM との自動同期
 
-`.github/workflows/sync-litellm.yml` が毎週月曜 9:00 (日本時間) に、[LiteLLM](https://github.com/BerriAI/litellm) の単価表 (`model_prices_and_context_window.json`) と比べます。差分があれば、`sync/litellm` ブランチに `pricing.json` を直したコミットを作って PR を出します。マージは人がします。Actions の画面から手動でも実行できます (sync-litellm → Run workflow)。
+`.github/workflows/sync-litellm.yml` が毎週月曜 9:00 (日本時間) に、[LiteLLM](https://github.com/BerriAI/litellm) の単価表 (`model_prices_and_context_window.json`) と比べます。差分があれば、`sync/litellm` ブランチに `pricing.json` を直したコミットを作って PR を出し、自動マージを予約します。必須チェックの validate が通った時点で GitHub がマージします。Actions の画面から手動でも実行できます (sync-litellm → Run workflow)。
 
 - 変換は `scripts/sync_litellm.py` が行う。LLM は使わない
   - 単価は 1 トークンあたりから 100 万トークンあたりに直す
@@ -26,7 +26,9 @@ https://raw.githubusercontent.com/Inhouse-erp/AiCostTray-pricing/main/pricing.js
 - pricing.json にあるモデル: LiteLLM と値が違えば LiteLLM の値にする。LiteLLM に無い項目・モデル (引退した古いモデルなど) は今の値のまま
 - LiteLLM にあって pricing.json に無い Claude / GPT のモデルは追加する。要らないものは PR から行を消し、`sync-ignore.txt` に正規表現を足す (次回から追加しない)。古い世代 (gpt-3 / gpt-4) と、音声・検索・画像のモデルは最初から除いている
 - 差分があれば `version` を上げる (日本時間の日付 + 連番)
-- PR は毎週作り直す (`sync/litellm` ブランチを強制 push)。PR に手を入れたら、次の実行の前にマージする
+- 自動マージしないもの: 同期の中の検証で問題が見つかった版 (単価が 10 倍を超えて変わる、0 になる など)。PR の本文に問題を書き、人が見る。validate も落ちるので、そのままではマージできない
+- 要らないモデルが追加されたときは、マージ後に pricing.json から行を消す PR を出し (version を上げる)、`sync-ignore.txt` にパターンを足す
+- PR は毎週作り直す (`sync/litellm` ブランチを強制 push)。自動マージの前に PR に手を入れたいときは、PR の画面で自動マージを外す
 - Actions のトークンで作った PR では pull_request のワークフローが走らないので、同期のワークフローが validate を起動する
 - 組織の設定で Actions に PR の作成が許されていないときは、ブランチだけ push して Issue (ラベル `sync-litellm`) で知らせる。Issue のリンクから PR を作る
 - 手元で試す:
@@ -68,4 +70,5 @@ https://raw.githubusercontent.com/Inhouse-erp/AiCostTray-pricing/main/pricing.js
 
 - `main` にはブランチ保護をかけ、PR とチェックの成功を必須にしてください (Settings → Branches)
 - 単価の値下げなど 10 倍を超える正当な変更は、アプリに取り込まれません。その場合は本体の同梱版で配布してください
+- 自動マージには、Settings → General の「Allow auto-merge」と、main のルールセットの必須チェック (`validate`) が要る。オフだと PR を作るだけで止まる (Actions のログに警告が出る)
 - 同期のワークフローに PR を作らせるには、Settings → Actions → General → Workflow permissions の「Allow GitHub Actions to create and approve pull requests」をオンにする。組織 (Inhouse-erp) 側で禁止されていると選べないので、組織の管理者に組織の同じ設定をオンにしてもらう。オンにできなくても、Issue で知らせる形で動く
