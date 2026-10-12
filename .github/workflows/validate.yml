@@ -2,6 +2,8 @@ name: validate
 
 on:
   pull_request:
+  # 同期のワークフロー (sync-litellm.yml) が作った PR では pull_request が走らないので、そこから起動する
+  workflow_dispatch:
   push:
     branches: [main]
 
@@ -21,6 +23,12 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           git show "origin/${{ github.base_ref }}:pricing.json" > base.json 2>/dev/null || exit 0
+          if cmp -s pricing.json base.json; then exit 0; fi
+          python scripts/validate.py pricing.json base.json
+      - name: 前の版との比較 (手動起動・同期の PR)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git show "origin/main:pricing.json" > base.json 2>/dev/null || exit 0
           if cmp -s pricing.json base.json; then exit 0; fi
           python scripts/validate.py pricing.json base.json
       - name: 前の版との比較 (push)
