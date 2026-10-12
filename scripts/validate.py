@@ -84,6 +84,8 @@ def compare(new, base):
             continue
         if (cur.get("input", 0) > 0 and p.get("input", 0) == 0) or (cur.get("output", 0) > 0 and p.get("output", 0) == 0):
             errors.append(f"有料だった単価が 0 になっています: {mid}")
+        if mid not in old_models:
+            continue  # 新しいモデルID は倍率を比べない (上位版・下位版は親の 10 倍以上違うのが普通)
         for k, a, b in zip(FIELDS, prices(cur), prices(p)):
             if a > 0 and b > 0 and (b / a > MAX_RATIO or a / b > MAX_RATIO):
                 errors.append(f"{mid}.{k} が {MAX_RATIO} 倍を超えて変わっています ({a} → {b})。アプリはこの版を取り込みません")
