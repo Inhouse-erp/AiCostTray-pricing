@@ -1,6 +1,7 @@
 name: sync-litellm
 
-# LiteLLM の単価表と比べ、差分があれば pricing.json を直した PR を出す。マージは人がする
+# LiteLLM の単価表と比べ、差分があれば pricing.json を直した PR を出す。
+# validate が通れば自動でマージする (検証で問題が見つかった版は自動マージせず、人が見る)
 on:
   schedule:
     - cron: "0 0 * * 1"   # 毎週月曜 9:00 (日本時間)
@@ -35,19 +36,24 @@ jobs:
         id: sync
         run: python scripts/sync_litellm.py "$RUNNER_TEMP/litellm.json" pricing.json --summary "$RUNNER_TEMP/summary.md"
       - name: 取り込んだ結果を検証
+        id: check
         if: steps.sync.outputs.changed == 'true'
         run: |
           git show HEAD:pricing.json > "$RUNNER_TEMP/base.json"
           # 検証に落ちても PR は作る (どこが問題かを PR で見られるように)。PR の validate も落ちるのでマージはできない
           if ! python scripts/validate.py pricing.json "$RUNNER_TEMP/base.json" > "$RUNNER_TEMP/validate.txt"; then
             { echo "## 検証で見つかった問題"; echo ""; echo '```'; cat "$RUNNER_TEMP/validate.txt"; echo '```'; echo "";
-              echo "> マージする前に値を確かめること (このままではアプリはこの版を取り込まない)"; } >> "$RUNNER_TEMP/summary.md"
+              echo "> マージする前に値を確かめること (このままではアプリはこの版を取り込まない)。自動マージはしない"; } >> "$RUNNER_TEMP/summary.md"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
           fi
       - name: PR を作る・更新する
         if: steps.sync.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.sync.outputs.version }}
+          CHECK_OK: ${{ steps.check.outputs.ok }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -63,7 +69,9 @@ jobs:
           pr=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
           if [ -n "$pr" ]; then
             gh pr edit "$pr" --title "$title" --body-file "$RUNNER_TEMP/body.md"
-          elif ! gh pr create --base main --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md"; then
+          elif gh pr create --base main --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md"; then
+            pr=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
+          else
             # 組織の設定で Actions に PR の作成が許されていないとき: Issue で知らせる (手で PR を作る)
             compare="${{ github.server_url }}/${{ github.repository }}/compare/main...$BRANCH?expand=1"
             { echo "Actions から PR を作れなかったので、[ここから PR を作ってください]($compare)。"; echo ""; cat "$RUNNER_TEMP/body.md"; } > "$RUNNER_TEMP/issue.md"
@@ -74,3 +82,11 @@ jobs:
           fi
           # Actions のトークンで push したブランチでは pull_request のワークフローが走らないので、validate を起動する
           gh workflow run validate.yml --ref "$BRANCH"
+          # 自動マージを予約する (必須チェックの validate が通った時点で GitHub がマージする)。検証で問題が見つかった版は予約しない
+          if [ -n "$pr" ] && [ "$CHECK_OK" = "true" ]; then
+            if ! gh pr merge "$pr" --auto --merge --delete-branch; then
+              echo "::warning::自動マージを予約できなかった。Settings → General の Allow auto-merge がオンか確かめる。PR は手でマージする"
+            fi
+          elif [ -n "$pr" ]; then
+            gh pr merge "$pr" --disable-auto 2>/dev/null || true   # 前回の予約が残っていれば外す
+          fi
