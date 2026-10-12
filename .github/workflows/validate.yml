@@ -21,6 +21,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           git show "origin/${{ github.base_ref }}:pricing.json" > base.json 2>/dev/null || exit 0
+          if cmp -s pricing.json base.json; then exit 0; fi
           python scripts/validate.py pricing.json base.json
       - name: 前の版との比較 (push)
         if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
