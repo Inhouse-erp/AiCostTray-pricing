@@ -1,0 +1,76 @@
+name: sync-litellm
+
+# LiteLLM の単価表と比べ、差分があれば pricing.json を直した PR を出す。マージは人がする
+on:
+  schedule:
+    - cron: "0 0 * * 1"   # 毎週月曜 9:00 (日本時間)
+  workflow_dispatch:
+
+permissions:
+  contents: write        # 同期用のブランチを push する
+  pull-requests: write   # PR を作る・本文を直す
+  issues: write          # PR を作れないとき (組織の設定で禁止されているとき) に Issue で知らせる
+  actions: write         # 作った PR に対して validate を起動する
+
+concurrency:
+  group: sync-litellm
+
+env:
+  LITELLM_URL: https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json
+  BRANCH: sync/litellm
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: LiteLLM の単価表を取得
+        run: curl -sfL --max-time 60 "$LITELLM_URL" -o "$RUNNER_TEMP/litellm.json"
+      - name: 差分を取り込む
+        id: sync
+        run: python scripts/sync_litellm.py "$RUNNER_TEMP/litellm.json" pricing.json --summary "$RUNNER_TEMP/summary.md"
+      - name: 取り込んだ結果を検証
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          git show HEAD:pricing.json > "$RUNNER_TEMP/base.json"
+          # 検証に落ちても PR は作る (どこが問題かを PR で見られるように)。PR の validate も落ちるのでマージはできない
+          if ! python scripts/validate.py pricing.json "$RUNNER_TEMP/base.json" > "$RUNNER_TEMP/validate.txt"; then
+            { echo "## 検証で見つかった問題"; echo ""; echo '```'; cat "$RUNNER_TEMP/validate.txt"; echo '```'; echo "";
+              echo "> マージする前に値を確かめること (このままではアプリはこの版を取り込まない)"; } >> "$RUNNER_TEMP/summary.md"
+          fi
+      - name: PR を作る・更新する
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.sync.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git commit -am "LiteLLM の単価表との差分を取り込む (version $VERSION)"
+          git push -f origin "$BRANCH"
+          {
+            cat "$RUNNER_TEMP/summary.md"
+            echo ""
+            echo "出典: [LiteLLM model_prices_and_context_window.json]($LITELLM_URL)。このワークフロー (sync-litellm) が毎週作り直す"
+          } > "$RUNNER_TEMP/body.md"
+          title="単価表を LiteLLM に合わせる (version $VERSION)"
+          pr=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          elif ! gh pr create --base main --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md"; then
+            # 組織の設定で Actions に PR の作成が許されていないとき: Issue で知らせる (手で PR を作る)
+            compare="${{ github.server_url }}/${{ github.repository }}/compare/main...$BRANCH?expand=1"
+            { echo "Actions から PR を作れなかったので、[ここから PR を作ってください]($compare)。"; echo ""; cat "$RUNNER_TEMP/body.md"; } > "$RUNNER_TEMP/issue.md"
+            issue=$(gh issue list --label sync-litellm --state open --json number -q '.[0].number')
+            gh label create sync-litellm --color 0e8a16 --force >/dev/null
+            if [ -n "$issue" ]; then gh issue edit "$issue" --title "$title" --body-file "$RUNNER_TEMP/issue.md"
+            else gh issue create --title "$title" --body-file "$RUNNER_TEMP/issue.md" --label sync-litellm; fi
+          fi
+          # Actions のトークンで push したブランチでは pull_request のワークフローが走らないので、validate を起動する
+          gh workflow run validate.yml --ref "$BRANCH"

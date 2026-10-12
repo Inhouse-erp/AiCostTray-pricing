@@ -75,8 +75,8 @@ def find(models, mid):
 
 def compare(new, base):
     errors = []
-    if new.get("version", 0) <= base.get("version", 0):
-        errors.append(f"version を上げてください ({base.get('version')} → {new.get('version')})。上げないとアプリは取り込みません")
+    if new.get("models") != base.get("models") and new.get("version", 0) <= base.get("version", 0):
+        errors.append(f"単価を変えたら version を上げてください ({base.get('version')} → {new.get('version')})。上げないとアプリは取り込みません")
     old_models = base.get("models") or {}
     for mid, p in (new.get("models") or {}).items():
         cur = find(old_models, mid)

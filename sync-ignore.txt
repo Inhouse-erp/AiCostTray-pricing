@@ -1,0 +1,11 @@
+# LiteLLM から自動で追加しないモデルID の正規表現 (pricing.json の表記: gpt-5-4 のように . を - にしたもの)。1 行 1 つ、# から始まる行は注釈
+# 古い世代 (AI コーディングツールでは使われない)
+^gpt-3
+^gpt-4
+# 音声・検索・画像など、チャット以外の用途
+search
+transcribe
+tts
+audio
+realtime
+image
