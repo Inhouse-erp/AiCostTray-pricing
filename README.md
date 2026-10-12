@@ -25,7 +25,7 @@ https://raw.githubusercontent.com/Inhouse-erp/AiCostTray-pricing/main/pricing.js
    ```
 
 4. PR を出す。GitHub Actions (`.github/workflows/validate.yml`) が形式と値の範囲を確かめ、マージ先の版と比べる
-5. マージすると、各利用者のアプリが次の確認 (最長 12 時間後) で取り込む。料金表の画面の「配信版を確認」ですぐに取り込むこともできる
+5. マージすると、各利用者のアプリが次の確認 (最長 12 時間後) で取り込む。料金表の画面の「配信版の単価を取り込む」ですぐに取り込むこともできる
 6. 次にアプリを配布するときは、本体リポジトリの `pricing.json` (exe に同梱する初期単価) も同じ内容にそろえる
 
 ## アプリが取り込まないもの
